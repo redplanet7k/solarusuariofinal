@@ -875,7 +875,7 @@ st.markdown("""
     <a href="https://www.instagram.com/angelicasantos.r/" target="_blank" style="color: #ffc107; text-decoration: none;">Angélica Santos</a>, 
     <a href="https://www.instagram.com" target="_blank" style="color: #ffc107; text-decoration: none;">Viviane Santos</a> & 
     <a href="https://www.instagram.com" target="_blank" style="color: #ffc107; text-decoration: none;">Karlia Ferreira</a>
-    · Graduandos em Ciência e Tecnologia · <strong style="color:#0d3d6e">UFMT — Universidade Federal de Mato Grosso</strong>
+    · Graduandos em Ciência e Tecnologia · <br> <strong style="color:#0d3d6e">UFMT — Universidade Federal de Mato Grosso</strong>
   </p>
   
   <p style="font-size: 11px; opacity: .7; margin-top: 8px; line-height: 1.4;">
