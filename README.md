@@ -60,10 +60,10 @@ solar_simulator/
 
 | Nome | Papel |
 |------|-------|
-| **Messias Kennedy** | Desenvolvimento principal |
+| **[Messias Kennedy] (https://www.instagram.com/srkennedydc/)** | Desenvolvimento principal |
 | **[Angélica Santos](https://www.instagram.com/angelicasantos.r/)** | Desenvolvimento |
-| **Karleia** | Desenvolvimento |
-| **Viviane** | Desenvolvimento |
+| **Karleia Ferreira** | Desenvolvimento |
+| **Viviane Santos** | Desenvolvimento |
 
 **Referência:** Pereira, E. B. et al. Atlas Brasileiro de Energia Solar, 2ª Ed. INPE, 2017.
 DOI: [10.34024/978851700089](http://doi.org/10.34024/978851700089)
