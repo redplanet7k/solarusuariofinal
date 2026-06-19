@@ -874,7 +874,7 @@ st.markdown("""
     <a href="https://www.instagram.com/srkennedydc/" target="_blank" style="color: #ffc107; text-decoration: none;">Atlas Kennedy</a> & co-autorado por 
     <a href="https://www.instagram.com/angelicasantos.r/" target="_blank" style="color: #ffc107; text-decoration: none;">Angélica Santos</a>, 
     <a href="https://www.instagram.com" target="_blank" style="color: #ffc107; text-decoration: none;">Viviane Santos</a> & 
-    <a href="https://www.instagram.com" target="_blank" style="color: #ffc107; text-decoration: none;">Karlia Ferreira</a>
+    <a href="https://www.instagram.com" target="_blank" style="color: #ffc107; text-decoration: none;">Karleia Ferreira</a>
     · Graduandos em Ciência e Tecnologia · <br> <strong style="color:#0d3d6e">UFMT — Universidade Federal de Mato Grosso</strong>
   </p>
   
