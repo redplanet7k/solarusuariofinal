@@ -16,6 +16,8 @@ FATOR_DESEMPENHO  = round(1-(PERDA_INVERSOR+PERDA_CABEAMENTO+PERDA_SOMBREAMENTO+
 
 MODULO_POTENCIA_WP=550; MODULO_AREA_M2=2.56
 TARIFA_ENERGIA_KWH=0.87; INFLACAO_ENERGIA_AA=0.065; TAXA_DESCONTO=0.12
+VIDA_UTIL_ANOS=25; TAXA_DEPRECIACAO_AA=0.005; CUSTO_MANUTENCAO_AA=400.0
+FATOR_EMISSAO_CO2_KG_KWH=0.0884
 
 # ── Tributos reais ENERGISA-MT (fatura JUN/2026) ─────────────────────────────
 # Fonte: fatura residencial B1 — base de cálculo real
@@ -28,8 +30,6 @@ CUSTO_ILUMINACAO_PUBLICA = 22.06      # R$/mês — fixo na fatura (não elimina
 # ⚠️ Atenção: estes valores são da distribuidora ENERGISA-MT (Lucas do Rio Verde/MT).
 # Tarifas, alíquotas de ICMS e taxas de iluminação pública variam por estado, município
 # e distribuidora. Consulte sempre a sua fatura para valores atualizados.
-VIDA_UTIL_ANOS=25; TAXA_DEPRECIACAO_AA=0.005; CUSTO_MANUTENCAO_AA=400.0
-FATOR_EMISSAO_CO2_KG_KWH=0.0884
 
 # ── Modelo de custo calibrado com 3 fornecedores reais (2025/2026) ──────────
 # Solturi (Lucas do Rio Verde — COM instalação):
