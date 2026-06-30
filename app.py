@@ -14,7 +14,10 @@ from data import (MESES, DIAS_POR_MES, TARIFA_ENERGIA_KWH, VIDA_UTIL_ANOS,
                   PERDA_INVERSOR, PERDA_CABEAMENTO, PERDA_SOMBREAMENTO,
                   PERDA_SUJEIRA, PERDA_TEMPERATURA, FATOR_DESEMPENHO,
                   MODULO_POTENCIA_WP, MODULO_AREA_M2, TEMP_OPERACAO_LOCAL,
-                  TEMP_REFERENCIA, custo_por_kwp)
+                  TEMP_REFERENCIA, custo_por_kwp,
+                  TARIFA_BASE_SEM_TRIBUTOS, TARIFA_COM_TRIBUTOS,
+                  ALIQ_PIS_PASEP, ALIQ_COFINS, ALIQ_ICMS_MT,
+                  CUSTO_ILUMINACAO_PUBLICA)
 from calculations import resumo_perdas
 from financial import (calcular_investimento, calcular_fluxo_caixa,
                        calcular_payback, calcular_vpl, calcular_tir, co2_evitado)
@@ -374,15 +377,76 @@ if st.session_state.step == 1:
         consumo = st.number_input("Consumo Médio Mensal (kWh)", 50, 100000, 350, 10,
             help='Campo "Consumo" da sua conta de energia — média dos últimos 12 meses')
     with c4:
-        tarifa = st.number_input("Tarifa de Energia (R$/kWh)", 0.20, 5.00, 0.87, 0.01,
-            format="%.2f", help="ENERGISA MT — Subgrupo B1 Residencial 2025: R$ 0,87/kWh")
+        tarifa = st.number_input("Tarifa de Energia (R$/kWh)", 0.20, 5.00,
+            round(TARIFA_COM_TRIBUTOS, 2), 0.01, format="%.4f",
+            help="Use o valor com tributos da sua fatura (campo 'Preço unit. c/ tributos'). "
+                 "ENERGISA-MT B1 Jun/2026: R$ 1,1941/kWh")
+
+    # ── Painel de composição da tarifa ──────────────────────────────────
+    val_pis    = round(tarifa * ALIQ_PIS_PASEP / (1 + ALIQ_PIS_PASEP + ALIQ_COFINS + ALIQ_ICMS_MT), 4)
+    val_cofins = round(tarifa * ALIQ_COFINS     / (1 + ALIQ_PIS_PASEP + ALIQ_COFINS + ALIQ_ICMS_MT), 4)
+    val_icms   = round(tarifa * ALIQ_ICMS_MT    / (1 + ALIQ_PIS_PASEP + ALIQ_COFINS + ALIQ_ICMS_MT), 4)
+    val_base   = round(tarifa - val_pis - val_cofins - val_icms, 4)
+    eco_ip     = round(consumo * tarifa, 2)
+
+    st.markdown(f"""
+    <div style="background:#f0f7ff;border:1.5px solid #a8c8ee;border-radius:12px;
+      padding:16px 18px;margin:4px 0 14px;">
+      <div style="font-size:12px;font-weight:700;color:#0d3d6e;margin-bottom:10px">
+        🧾 Composição estimada da sua tarifa (R$ {tarifa:.4f}/kWh)
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px">
+        <div style="background:#fff;border:1px solid #c8d9ef;border-radius:8px;padding:10px;text-align:center">
+          <div style="font-size:10px;color:#5a7099;margin-bottom:3px">Tarifa base</div>
+          <div style="font-size:15px;font-weight:700;color:#0d3d6e">R$ {val_base:.4f}</div>
+          <div style="font-size:10px;color:#9ab0cc">{val_base/tarifa*100:.1f}% do total</div>
+        </div>
+        <div style="background:#fff3e0;border:1px solid #fbbf70;border-radius:8px;padding:10px;text-align:center">
+          <div style="font-size:10px;color:#5a7099;margin-bottom:3px">ICMS-MT (17%)</div>
+          <div style="font-size:15px;font-weight:700;color:#ea8000">R$ {val_icms:.4f}</div>
+          <div style="font-size:10px;color:#9ab0cc">{val_icms/tarifa*100:.1f}% do total</div>
+        </div>
+        <div style="background:#fff3e0;border:1px solid #fbbf70;border-radius:8px;padding:10px;text-align:center">
+          <div style="font-size:10px;color:#5a7099;margin-bottom:3px">PIS/PASEP (1,65%)</div>
+          <div style="font-size:15px;font-weight:700;color:#ea8000">R$ {val_pis:.4f}</div>
+          <div style="font-size:10px;color:#9ab0cc">{val_pis/tarifa*100:.1f}% do total</div>
+        </div>
+        <div style="background:#fff3e0;border:1px solid #fbbf70;border-radius:8px;padding:10px;text-align:center">
+          <div style="font-size:10px;color:#5a7099;margin-bottom:3px">COFINS (7,60%)</div>
+          <div style="font-size:15px;font-weight:700;color:#ea8000">R$ {val_cofins:.4f}</div>
+          <div style="font-size:10px;color:#9ab0cc">{val_cofins/tarifa*100:.1f}% do total</div>
+        </div>
+      </div>
+      <div style="background:#fff8e1;border:1px solid #f59e0b;border-radius:8px;
+        padding:10px 14px;font-size:12px;color:#78350f;line-height:1.6">
+        ⚠️ <strong>Atenção — Iluminação Pública (CIP):</strong>
+        Sua conta tem uma taxa fixa de <strong>R$ {CUSTO_ILUMINACAO_PUBLICA:.2f}/mês</strong>
+        de iluminação pública que <strong>não é eliminada pelo sistema solar</strong>
+        — você vai continuar pagando esse valor mesmo após a instalação.<br>
+        <span style="font-size:11px;opacity:.80">
+          📍 Valor baseado na fatura ENERGISA-MT (Lucas do Rio Verde, JUN/2026).
+          <strong>Essa taxa varia por município e distribuidora</strong> — verifique o valor
+          na sua própria fatura no campo "Contrib de Ilum Pub".
+        </span>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    ip_local = st.number_input(
+        "💡 Taxa de Iluminação Pública da sua cidade (R$/mês)",
+        0.0, 500.0, CUSTO_ILUMINACAO_PUBLICA, 0.50, format="%.2f",
+        help="Valor fixo cobrado na sua fatura — não é eliminado pelo solar. "
+             "Verifique o campo 'Contrib de Ilum Pub' na sua conta de energia. "
+             "Varia conforme seu município e distribuidora."
+    )
 
     st.markdown("</div>", unsafe_allow_html=True)
     _, bc = st.columns([3,1])
     with bc:
         if st.button("Próximo →", type="primary", use_container_width=True):
             st.session_state.form.update({"cidade":cidade,"tipo":tipo,
-                "consumo":consumo,"tarifa":tarifa,"dados_cidade":dc})
+                "consumo":consumo,"tarifa":tarifa,
+                "ip_local":ip_local,"dados_cidade":dc})
             st.session_state.step = 2; st.rerun()
 
 # ══════════════════════════════════════════════════════════════════
@@ -456,6 +520,7 @@ elif st.session_state.step == 3:
     consumo   = f["consumo"]; tarifa = f["tarifa"]
     inflacao  = f["inflacao"]; taxa_desc = f["taxa_desc"]
     PR        = f["derate"]
+    ip_local  = f.get("ip_local", CUSTO_ILUMINACAO_PUBLICA)
     dc        = f["dados_cidade"]
     lat_c=dc["lat"]; lon_c=dc["lon"]; ghi_c=dc["global"]; mensal_c=dc["mensal"]
 
@@ -523,10 +588,17 @@ elif st.session_state.step == 3:
     pb_s_txt = f"{pb_s} anos" if isinstance(pb_s, int) else "mais de 25 anos"
     cob_txt  = "✅ Total" if cob >= 100 else f"{cob}% do consumo"
 
+    # Economia real = economia na conta - IP (que continua sendo cobrada)
+    eco_mes_real = round(eco_mes - ip_local, 2)
+
     # Comparação TIR com Selic (linguagem do usuário)
     if tir >= 12: tir_compare = f"melhor que a Selic ({taxa_desc*100:.0f}% a.a.)"
-    elif tir >= 8: tir_compare = f"acima da poupança"
+    elif tir >= 8: tir_compare = "acima da poupança"
     else: tir_compare = f"rentabilidade de {tir}% ao ano"
+
+    # Decomposição da tarifa para exibir no hero
+    val_icms_hero = round(tarifa * ALIQ_ICMS_MT / (1 + ALIQ_PIS_PASEP + ALIQ_COFINS + ALIQ_ICMS_MT), 4)
+    eco_tributos  = round(min(ger_ano/12, consumo) * (val_icms_hero + round(tarifa*(ALIQ_PIS_PASEP+ALIQ_COFINS)/(1+ALIQ_PIS_PASEP+ALIQ_COFINS+ALIQ_ICMS_MT),4)), 2)
 
     st.markdown(f"""
     <div class="result-hero">
@@ -534,8 +606,8 @@ elif st.session_state.step == 3:
       <div class="result-hero-grid">
         <div class="rhc highlight">
           <div class="rhc-icon">💰</div>
-          <div class="rhc-val">R$ {eco_mes:,.0f}</div>
-          <div class="rhc-label">economia<br>por mês na conta de luz</div>
+          <div class="rhc-val">R$ {eco_mes_real:,.0f}</div>
+          <div class="rhc-label">economia líquida<br>por mês na conta de luz</div>
         </div>
         <div class="rhc highlight">
           <div class="rhc-icon">⏱️</div>
@@ -548,11 +620,30 @@ elif st.session_state.step == 3:
           <div class="rhc-label">{kwp:.1f} kWp · cobre {cob_txt}</div>
         </div>
       </div>
-      <div style="margin-top:14px;font-size:12px;opacity:.80;line-height:1.6">
+      <div style="margin-top:14px;font-size:12px;opacity:.80;line-height:1.7">
         💸 Investimento estimado: <strong>R$ {inv['custo_total']:,.0f}</strong>
         &nbsp;·&nbsp; Retorno ao longo de 25 anos: <strong>R$ {sum(fc["economias"]):,.0f}</strong>
-        &nbsp;·&nbsp; Rentabilidade: <strong>{tir}% ao ano</strong> ({tir_compare})
+        &nbsp;·&nbsp; Rentabilidade: <strong>{tir}% ao ano</strong> ({tir_compare})<br>
+        🧾 Economia bruta na energia: <strong>R$ {eco_mes:,.0f}/mês</strong>
+        · Iluminação pública (fixa): <strong>−R$ {ip_local:.2f}/mês</strong>
+        · Tributos evitados/mês: <strong>≈ R$ {eco_tributos:,.0f}</strong>
       </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Aviso sobre IP e tributos ────────────────────────────────────────────
+    st.markdown(f"""
+    <div style="background:#fff8e1;border:1.5px solid #f59e0b;border-radius:10px;
+      padding:13px 16px;margin:6px 0 12px;font-size:12px;color:#78350f;line-height:1.7">
+      ⚠️ <strong>Sobre a conta de luz após a instalação:</strong><br>
+      A taxa de iluminação pública (<strong>R$ {ip_local:.2f}/mês</strong>) e eventuais
+      encargos fixos da distribuidora continuam sendo cobrados — o solar não os elimina.
+      A economia real mostrada já desconta esse valor.<br>
+      <span style="font-size:11px;opacity:.85">
+        📍 Valores de referência: ENERGISA-MT · Lucas do Rio Verde · JUN/2026.
+        <strong>Tarifas, ICMS e taxa de IP variam por estado, município e distribuidora</strong>
+        — consulte sempre a sua fatura para personalizar os valores acima.
+      </span>
     </div>
     """, unsafe_allow_html=True)
 
@@ -649,8 +740,10 @@ elif st.session_state.step == 3:
     </div>""", unsafe_allow_html=True)
 
     with st.expander("📈  Ver Dashboard de Análise", expanded=False):
-        tab1,tab2,tab3,tab4,tab5 = st.tabs(["☀️ Geração vs Consumo","💸 Retorno Financeiro",
-                                             "🔬 Como funciona","📊 Confiabilidade","🌿 Impacto Ambiental"])
+        tab1,tab2,tab3,tab4,tab5,tab6 = st.tabs([
+            "☀️ Geração vs Consumo","💸 Retorno Financeiro",
+            "🧾 Impostos & Tarifa","🔬 Como funciona",
+            "📊 Confiabilidade","🌿 Impacto Ambiental"])
 
         # ── Tab 1: Geração vs Consumo ─────────────────────────────────────
         with tab1:
@@ -740,8 +833,93 @@ elif st.session_state.step == 3:
 | **Total economizado (25 anos)** | R$ {sum(fc["economias"]):,.0f} |
 """)
 
-        # ── Tab 3: Como funciona ────────────────────────────────────────
+        # ── Tab 3: Impostos & Tarifa ──────────────────────────────────────
         with tab3:
+            # Cálculo da composição
+            _d = 1 + ALIQ_PIS_PASEP + ALIQ_COFINS + ALIQ_ICMS_MT
+            v_base   = round(tarifa * 1 / _d, 4)
+            v_icms   = round(tarifa * ALIQ_ICMS_MT  / _d, 4)
+            v_pis    = round(tarifa * ALIQ_PIS_PASEP / _d, 4)
+            v_cofins = round(tarifa * ALIQ_COFINS    / _d, 4)
+
+            # Quanto o usuário paga de tributos por mês antes do solar
+            trib_mes_antes = round(consumo * (v_icms + v_pis + v_cofins), 2)
+            # Quanto deixa de pagar com o solar (sobre a energia gerada)
+            gen_util_mes   = min(ger_ano/12, consumo)
+            trib_mes_depois= round((consumo - gen_util_mes) * (v_icms + v_pis + v_cofins), 2)
+            trib_economia  = round(trib_mes_antes - trib_mes_depois, 2)
+
+            st.markdown(f"""
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">
+              <div style="background:#fff3e0;border:1px solid #fbbf70;border-radius:10px;padding:14px;text-align:center">
+                <div style="font-size:11px;color:#78350f;margin-bottom:4px">Você paga de impostos hoje</div>
+                <div style="font-size:22px;font-weight:700;color:#ea8000">R$ {trib_mes_antes:,.0f}<span style="font-size:12px">/mês</span></div>
+                <div style="font-size:10px;color:#9ab0cc;margin-top:3px">sobre {consumo} kWh × impostos da tarifa</div>
+              </div>
+              <div style="background:#dcfce7;border:1px solid #86efac;border-radius:10px;padding:14px;text-align:center">
+                <div style="font-size:11px;color:#166534;margin-bottom:4px">Vai economizar em impostos</div>
+                <div style="font-size:22px;font-weight:700;color:#16a34a">R$ {trib_economia:,.0f}<span style="font-size:12px">/mês</span></div>
+                <div style="font-size:10px;color:#9ab0cc;margin-top:3px">tributos sobre energia que você vai gerar</div>
+              </div>
+              <div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:10px;padding:14px;text-align:center">
+                <div style="font-size:11px;color:#7f1d1d;margin-bottom:4px">Iluminação Pública (fixa)</div>
+                <div style="font-size:22px;font-weight:700;color:#dc2626">R$ {ip_local:.2f}<span style="font-size:12px">/mês</span></div>
+                <div style="font-size:10px;color:#9ab0cc;margin-top:3px">continua na fatura — solar não elimina</div>
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Gráfico pizza: composição da tarifa
+            fig_tar = go.Figure(go.Pie(
+                labels=[
+                    f"Tarifa base (R$ {v_base:.4f})",
+                    f"ICMS-MT 17% (R$ {v_icms:.4f})",
+                    f"COFINS 7,6% (R$ {v_cofins:.4f})",
+                    f"PIS/PASEP 1,65% (R$ {v_pis:.4f})",
+                ],
+                values=[v_base, v_icms, v_cofins, v_pis],
+                hole=0.50,
+                marker_colors=[BLUE, ORANGE, "#f97316", "#fbbf24"],
+                textfont=dict(size=11, color=TEXT),
+                textposition="outside"
+            ))
+            fig_tar.update_layout(
+                title=f"O que você paga por kWh — R$ {tarifa:.4f}/kWh (ENERGISA-MT referência)",
+                legend=dict(orientation="h", y=-0.22, font=dict(size=11))
+            )
+            theme(fig_tar, 300)
+            st.plotly_chart(fig_tar, use_container_width=True)
+
+            # Gráfico de barras: economia em impostos ao longo de 25 anos
+            eco_trib_25 = [round(trib_economia * (1 + inflacao)**t, 2) for t in range(1, 26)]
+            fig_et = go.Figure(go.Bar(
+                x=[f"Ano {t}" for t in range(1, 26)],
+                y=eco_trib_25,
+                marker_color="rgba(22,163,74,0.72)",
+                marker_line_color=GREEN, marker_line_width=1,
+                name="Economia em tributos (R$/ano)",
+            ))
+            fig_et.update_layout(
+                title=f"Tributos evitados ao longo de 25 anos — Total estimado: R$ {sum(eco_trib_25)*12:,.0f}",
+                yaxis_title="R$/mês (projeção c/ inflação da energia)"
+            )
+            theme(fig_et, 260)
+            st.plotly_chart(fig_et, use_container_width=True)
+
+            st.markdown(f"""
+            <div style="background:#fff8e1;border:1.5px solid #f59e0b;border-radius:10px;
+              padding:13px 16px;font-size:12px;color:#78350f;line-height:1.7">
+              ⚠️ <strong>Atenção — valores regionais:</strong> A alíquota de ICMS varia por estado
+              (ex: SP=12%, MT=17%, CE=27,5%). A taxa de PIS/COFINS é federal (9,25% total) e se aplica
+              a todos. A <strong>Iluminação Pública</strong> varia por município e distribuidora —
+              sempre consulte a sua fatura. Os valores usados aqui são da
+              <strong>ENERGISA-MT · Lucas do Rio Verde · JUN/2026</strong>
+              e podem diferir da sua região.
+            </div>
+            """, unsafe_allow_html=True)
+
+        # ── Tab 4: Como funciona (era tab3) ────────────────────────────
+        with tab4:
             c3a, c3b = st.columns(2)
             with c3a:
                 lp=[k for k in per if k!="Total"]; vp=[per[k] for k in lp]
@@ -781,8 +959,8 @@ elif st.session_state.step == 3:
                 xaxis_title="Temperatura (°C)",yaxis_title="Perda (%)")
             theme(fig_t,220); st.plotly_chart(fig_t,use_container_width=True)
 
-        # ── Tab 4: Confiabilidade ──────────────────────────────────────
-        with tab4:
+        # ── Tab 5: Confiabilidade ──────────────────────────────────────
+        with tab5:
             irr_v=[mensal_c[m] for m in MESES]
             med=np.mean(irr_v); std=np.std(irr_v)
             m1,m2,m3=st.columns(3)
@@ -823,8 +1001,8 @@ elif st.session_state.step == 3:
               ao número de geração esperada para sua casa ou negócio.
             </div>""", unsafe_allow_html=True)
 
-        # ── Tab 5: Ambiental ──────────────────────────────────────────────
-        with tab5:
+        # ── Tab 6: Ambiental ──────────────────────────────────────────────
+        with tab6:
             ca,cb_col,cc=st.columns(3)
             ca.metric("CO₂ evitado/ano",f"{co2['kg_co2_ano']:,.0f} kg")
             cb_col.metric("CO₂ em 25 anos",f"{co2['ton_co2_25anos']:.1f} t")
@@ -946,7 +1124,7 @@ st.markdown("""
     <a href="https://www.instagram.com/srkennedydc/" target="_blank" style="color: #ffc107; text-decoration: none;">Atlas Kennedy</a> & co-autorado por 
     <a href="https://www.instagram.com/angelicasantos.r/" target="_blank" style="color: #ffc107; text-decoration: none;">Angélica Santos</a>, 
     <a href="https://www.instagram.com" target="_blank" style="color: #ffc107; text-decoration: none;">Viviane Santos</a> & 
-    <a href="https://www.instagram.com" target="_blank" style="color: #ffc107; text-decoration: none;">Karleia Ferreira</a>
+    <a href="https://www.instagram.com" target="_blank" style="color: #ffc107; text-decoration: none;">Karlia Ferreira</a>
     · Graduandos em Ciência e Tecnologia · <br> <strong style="color:#0d3d6e">UFMT — Universidade Federal de Mato Grosso</strong>
   </p>
   
