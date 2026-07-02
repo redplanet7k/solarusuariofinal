@@ -14,10 +14,11 @@ from data import (MESES, DIAS_POR_MES, TARIFA_ENERGIA_KWH, VIDA_UTIL_ANOS,
                   PERDA_INVERSOR, PERDA_CABEAMENTO, PERDA_SOMBREAMENTO,
                   PERDA_SUJEIRA, PERDA_TEMPERATURA, FATOR_DESEMPENHO,
                   MODULO_POTENCIA_WP, MODULO_AREA_M2, TEMP_OPERACAO_LOCAL,
-                  TEMP_REFERENCIA, custo_por_kwp,
+                  TEMP_REFERENCIA, custo_por_kwp, faixa_custo_kwp, pmt as pmt_financ,
                   TARIFA_BASE_SEM_TRIBUTOS, TARIFA_COM_TRIBUTOS,
                   ALIQ_PIS_PASEP, ALIQ_COFINS, ALIQ_ICMS_MT,
-                  CUSTO_ILUMINACAO_PUBLICA)
+                  CUSTO_ILUMINACAO_PUBLICA, FINANCIAMENTO_OPCOES,
+                  MODULO_820_WP, MODULO_820_AREA)
 from calculations import resumo_perdas
 from financial import (calcular_investimento, calcular_fluxo_caixa,
                        calcular_payback, calcular_vpl, calcular_tir, co2_evitado)
@@ -482,22 +483,43 @@ elif st.session_state.step == 2:
 
     c3, c4 = st.columns(2)
     with c3:
-        modalidade = st.selectbox("Modalidade de Compra",
-            ["À vista","Financiado (BNDES / banco)","Consórcio","Leasing solar"])
+        fin_nome = st.selectbox(
+            "💳 Como pretende pagar?",
+            list(FINANCIAMENTO_OPCOES.keys()),
+            index=0,
+            help="Opções reais praticadas no mercado de Mato Grosso (Jul/2026)"
+        )
     with c4:
         inflacao = st.slider("Inflação da Energia (% a.a.)", 1.0, 15.0, 6.5, 0.5,
             help="Histórico ANEEL 2015–2025 ≈ 6,5% a.a.") / 100
 
     taxa_desc = st.slider("Taxa de Desconto / SELIC (% a.a.)", 5.0, 20.0, 12.0, 0.5) / 100
 
-    taxa_fin = prazo_fin = None
-    if "Financiado" in modalidade:
-        f1, f2 = st.columns(2)
-        with f1:
-            taxa_fin = st.number_input("Taxa de Juros Anual (%)", 0.0, 40.0, 10.0, 0.1,
-                help="BNDES Mais Solar: ≈ 6–8% a.a.") / 100
-        with f2:
-            prazo_fin = st.number_input("Prazo (meses)", 12, 240, 60, 12)
+    fin_cfg = FINANCIAMENTO_OPCOES[fin_nome]
+    taxa_fin  = fin_cfg["taxa_am"]
+    prazo_fin = fin_cfg["prazo_meses"]
+
+    # Exibe detalhes da opção escolhida + possibilidade de ajuste
+    if fin_cfg["taxa_am"] > 0:
+        st.markdown(f"""
+        <div style="background:#f0f7ff;border:1.5px solid #a8c8ee;border-radius:10px;
+          padding:12px 16px;margin:6px 0 10px;font-size:12px;color:#0d3d6e">
+          <strong>📋 {fin_cfg['descricao']}</strong><br>
+          Taxa: <strong>{fin_cfg['taxa_am']*100:.2f}% a.m.</strong>
+          &nbsp;·&nbsp; Prazo: <strong>{fin_cfg['prazo_meses']} meses</strong>
+          &nbsp;·&nbsp; Entrada: <strong>{'Sem entrada' if fin_cfg['entrada_pct']==0 else f"{fin_cfg['entrada_pct']*100:.0f}% do valor"}</strong>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Permite ajuste fino
+        with st.expander("⚙️ Ajustar taxa ou prazo manualmente"):
+            fa, fb = st.columns(2)
+            with fa:
+                taxa_fin = st.number_input("Taxa mensal (%)", 0.5, 5.0,
+                    fin_cfg["taxa_am"]*100, 0.05, format="%.2f") / 100
+            with fb:
+                prazo_fin = st.number_input("Prazo (meses)", 12, 240,
+                    fin_cfg["prazo_meses"], 12)
 
     st.markdown("</div>", unsafe_allow_html=True)
     b1, b2 = st.columns(2)
@@ -507,7 +529,7 @@ elif st.session_state.step == 2:
     with b2:
         if st.button("☀️ Calcular Viabilidade", type="primary", use_container_width=True):
             st.session_state.form.update({"area":area,"orcamento":orcamento,
-                "derate":derate/100,"modalidade":modalidade,
+                "derate":derate/100,"modalidade":fin_nome,
                 "inflacao":inflacao,"taxa_desc":taxa_desc,
                 "taxa_fin":taxa_fin,"prazo_fin":prazo_fin})
             st.session_state.step = 3; st.rerun()
@@ -572,9 +594,11 @@ elif st.session_state.step == 3:
     else:         tir_txt="🔴 Baixa. Reduza o sistema ou busque outro orçamento."
 
     pmt_val = saldo_val = None
-    if "Financiado" in f["modalidade"] and f.get("taxa_fin") and f.get("prazo_fin"):
-        rm=f["taxa_fin"]/12; pf=int(f["prazo_fin"])
-        pmt_val   = round(inv["custo_total"]*rm*(1+rm)**pf/((1+rm)**pf-1)) if rm>0 else round(inv["custo_total"]/pf)
+    fin_cfg_r = FINANCIAMENTO_OPCOES.get(f["modalidade"], {})
+    taxa_r  = f.get("taxa_fin") or fin_cfg_r.get("taxa_am", 0)
+    prazo_r = int(f.get("prazo_fin") or fin_cfg_r.get("prazo_meses", 0))
+    if taxa_r > 0 and prazo_r > 0:
+        pmt_val   = pmt_financ(inv["custo_total"], taxa_r, prazo_r)
         saldo_val = round(eco_mes - pmt_val)
 
     # ── Geo card resultado ───────────────────────────────────────────────
@@ -694,7 +718,40 @@ elif st.session_state.step == 3:
           </div>
         </div>""", unsafe_allow_html=True)
 
-    # ── CO2 inline (sempre visível, simples) ────────────────────────────────
+    # ── Faixa de preço regional ─────────────────────────────────────────────
+    p_min, p_med, p_max = faixa_custo_kwp(kwp)
+    c_min = round(kwp * p_min); c_med = round(kwp * p_med); c_max = round(kwp * p_max)
+    st.markdown(f"""
+    <div style="background:#f8faff;border:1.5px solid #c8d9ef;border-radius:12px;
+      padding:16px 18px;margin:8px 0 6px;">
+      <div style="font-size:13px;font-weight:700;color:#0d3d6e;margin-bottom:10px">
+        💰 Faixa de investimento estimada para {kwp:.1f} kWp no Mato Grosso
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px">
+        <div style="background:#f0f7ff;border-radius:8px;padding:10px;text-align:center">
+          <div style="font-size:10px;color:#5a7099;margin-bottom:3px">Mínimo estimado</div>
+          <div style="font-size:18px;font-weight:700;color:#1d6fbf">R$ {c_min:,}</div>
+          <div style="font-size:10px;color:#9ab0cc">R$ {p_min:,}/kWp</div>
+        </div>
+        <div style="background:#0d3d6e;border-radius:8px;padding:10px;text-align:center">
+          <div style="font-size:10px;color:#a8c8ee;margin-bottom:3px">Referência de mercado</div>
+          <div style="font-size:18px;font-weight:700;color:#f2a93b">R$ {c_med:,}</div>
+          <div style="font-size:10px;color:#8fb4dd">R$ {p_med:,}/kWp — usado no cálculo</div>
+        </div>
+        <div style="background:#f0f7ff;border-radius:8px;padding:10px;text-align:center">
+          <div style="font-size:10px;color:#5a7099;margin-bottom:3px">Máximo estimado</div>
+          <div style="font-size:18px;font-weight:700;color:#1d6fbf">R$ {c_max:,}</div>
+          <div style="font-size:10px;color:#9ab0cc">R$ {p_max:,}/kWp</div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:#5a7099;line-height:1.6">
+        📍 <strong>Fontes:</strong> Apollo Energy Solar (Lucas do Rio Verde/MT · 820Wp · 60x),
+        Cerrado Energy (620Wp), BC4 Energia, Timas/WEG Engenharia — Jul/2026.<br>
+        Valores <strong>com instalação completa</strong> (inversor, estrutura, cabeamento, projeto elétrico e mão de obra).
+        Variação de ±15% é normal entre cidades do MT — peça orçamento local para confirmar.
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
     st.markdown(f"""
     <div style="background:#dcfce7;border:1px solid #86efac;border-radius:12px;
       padding:14px 18px;margin:10px 0 6px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
@@ -711,12 +768,19 @@ elif st.session_state.step == 3:
 
     if pmt_val is not None:
         sc = GREEN if saldo_val>=0 else RED
+        conta_atual = round(consumo * tarifa + ip_local)
         st.markdown(f"""
-        <div class="card"><div class="card-h">🏦 Financiamento</div>
+        <div class="card"><div class="card-h">🏦 {f['modalidade']}</div>
           <div class="mg" style="margin-top:10px">
-            <div class="mc b"><div class="ml">Parcela Mensal</div><div class="mv">R$ {pmt_val:,}</div><div class="mu">R$/mês</div></div>
-            <div class="mc g"><div class="ml">Saldo Líquido</div><div class="mv" style="color:{sc}">{"+" if saldo_val>=0 else ""}R$ {abs(saldo_val):,}</div><div class="mu">economia − parcela</div></div>
-            <div class="mc"><div class="ml">Taxa / Prazo</div><div class="mv" style="color:{MUTED}">{f["taxa_fin"]*100:.1f}%</div><div class="mu">{int(f["prazo_fin"])} meses</div></div>
+            <div class="mc b"><div class="ml">Parcela Mensal</div>
+              <div class="mv">R$ {pmt_val:,.0f}</div>
+              <div class="mu">{prazo_r}x · {taxa_r*100:.2f}% a.m.</div></div>
+            <div class="mc g"><div class="ml">Saldo vs Conta Atual</div>
+              <div class="mv" style="color:{sc}">{"+" if saldo_val>=0 else ""}R$ {abs(saldo_val):,.0f}</div>
+              <div class="mu">conta atual ≈ R$ {conta_atual:,.0f}/mês</div></div>
+            <div class="mc"><div class="ml">Total financiado</div>
+              <div class="mv" style="font-size:14px;color:{MUTED}">R$ {pmt_val*prazo_r:,.0f}</div>
+              <div class="mu">juros + capital</div></div>
           </div></div>""", unsafe_allow_html=True)
 
     # ══════════════════════════════════════════════════════════════════
@@ -1124,7 +1188,7 @@ st.markdown("""
     <a href="https://www.instagram.com/srkennedydc/" target="_blank" style="color: #ffc107; text-decoration: none;">Atlas Kennedy</a> & co-autorado por 
     <a href="https://www.instagram.com/angelicasantos.r/" target="_blank" style="color: #ffc107; text-decoration: none;">Angélica Santos</a>, 
     <a href="https://www.instagram.com" target="_blank" style="color: #ffc107; text-decoration: none;">Viviane Santos</a> & 
-    <a href="https://www.instagram.com" target="_blank" style="color: #ffc107; text-decoration: none;">Karleia Ferreira</a>
+    <a href="https://www.instagram.com" target="_blank" style="color: #ffc107; text-decoration: none;">Karlia Ferreira</a>
     · Graduandos em Ciência e Tecnologia · <br> <strong style="color:#0d3d6e">UFMT — Universidade Federal de Mato Grosso</strong>
   </p>
   
